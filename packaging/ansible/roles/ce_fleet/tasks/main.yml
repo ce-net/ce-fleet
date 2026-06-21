@@ -1,0 +1,89 @@
+---
+# ce_fleet — idempotent Ansible role to roll CE + ce-infer onto a Linux fleet node.
+#
+# Trust spine: IT/Ansible owns FILE PLACEMENT + service lifecycle; the org root owns AUTHORIZATION.
+# This role pins the org PUBLIC root key and configures enrollment; it never holds the org secret.
+# Enroll tokens / bootstrap secret are Vault-sourced and no_log so they never land in logs.
+#
+# This role is the audited install-of-record + fallback. For scale, enroll ~1 seed per subnet here,
+# then let `replicator seed --depth 2/3` fan binaries + the GGUF out as an O(log N) attenuating tree.
+
+- name: Detect package manager family
+  ansible.builtin.set_fact:
+    ce_fleet_pkg_kind: "{{ 'deb' if ansible_pkg_mgr in ['apt'] else 'rpm' }}"
+
+- name: Install ce-fleet (.deb) from the internal mirror
+  ansible.builtin.apt:
+    deb: "{{ ce_fleet_package_url }}"
+    state: present
+  when: ce_fleet_pkg_kind == 'deb'
+
+- name: Install ce-fleet (.rpm) from the internal mirror
+  ansible.builtin.dnf:
+    name: "{{ ce_fleet_rpm_url }}"
+    state: present
+    disable_gpg_check: false
+  when: ce_fleet_pkg_kind == 'rpm'
+
+- name: Ensure CE config dir exists
+  ansible.builtin.file:
+    path: /etc/ce
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Pin the org PUBLIC root key (the authorization pin)
+  ansible.builtin.copy:
+    content: "{{ ce_fleet_root_pubkey }}"
+    dest: /etc/ce/ce-root.pub
+    owner: root
+    group: root
+    mode: "0644"
+  when: ce_fleet_root_pubkey | length > 0
+  notify: re-pin root key into node roots
+
+- name: Place the org root pubkey into the node's accepted roots
+  ansible.builtin.copy:
+    content: "{{ ce_fleet_root_pubkey }}"
+    dest: "{{ ce_fleet_data_dir }}/roots/ce-root.pub"
+    owner: ce
+    group: ce
+    mode: "0644"
+  when: ce_fleet_root_pubkey | length > 0
+
+- name: Write enrollment env (delegate URL + bootstrap secret from Vault)
+  ansible.builtin.template:
+    src: enroll.env.j2
+    dest: /etc/ce/enroll.env
+    owner: root
+    group: ce
+    mode: "0640"
+  no_log: true   # the bootstrap secret must never appear in Ansible output
+
+- name: Apply the egress-deny firewall (air-gap second half)
+  ansible.builtin.command:
+    cmd: nft -f /etc/ce/ce-fleet-egress.nft
+  register: ce_fleet_nft
+  changed_when: false
+  failed_when: ce_fleet_nft.rc != 0 and 'No such file' not in ce_fleet_nft.stderr
+  when: ce_fleet_apply_egress_firewall | bool
+
+- name: Enable + start the node service
+  ansible.builtin.systemd:
+    name: ce-node.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable the one-shot enrollment service
+  ansible.builtin.systemd:
+    name: ce-enroll.service
+    enabled: true
+
+- name: Enable + start the inference worker
+  ansible.builtin.systemd:
+    name: ce-infer-worker.service
+    enabled: true
+    state: started
+  when: ce_fleet_enable_worker | bool

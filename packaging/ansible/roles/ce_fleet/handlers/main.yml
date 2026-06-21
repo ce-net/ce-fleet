@@ -1,0 +1,9 @@
+---
+- name: re-pin root key into node roots
+  ansible.builtin.copy:
+    content: "{{ ce_fleet_root_pubkey }}"
+    dest: "{{ ce_fleet_data_dir }}/roots/ce-root.pub"
+    owner: ce
+    group: ce
+    mode: "0644"
+  when: ce_fleet_root_pubkey | length > 0

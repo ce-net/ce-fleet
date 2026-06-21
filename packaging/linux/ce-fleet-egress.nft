@@ -1,0 +1,54 @@
+#!/usr/sbin/nft -f
+# ce-fleet-egress.nft — the air-gap's second half: default-deny non-LAN OUTBOUND.
+#
+# The software half (the units never pass --bootstrap / never dial a public relay) keeps the node
+# from phoning home; this firewall makes the air-gap structural — even a future bug or a poisoned
+# binary cannot reach the internet. PHI in the data plane physically cannot egress.
+#
+# Allowed outbound destinations: loopback + RFC1918 private ranges + link-local + mDNS multicast.
+# Everything else is dropped. Inbound 4001 (libp2p LAN, TCP+UDP) is opened separately; 8844 (node
+# API) and the llama.cpp engine stay loopback-only and are NOT opened to the LAN here.
+#
+# Apply: nft -f /etc/ce/ce-fleet-egress.nft  (the postinst installs + enables it).
+
+table inet ce_fleet {
+    chain output {
+        type filter hook output priority filter; policy drop;
+
+        # Established/related return traffic for allowed connections.
+        ct state established,related accept
+
+        # Loopback (node API <-> worker <-> llama-server all live here).
+        oif "lo" accept
+
+        # LAN: RFC1918 private IPv4 ranges.
+        ip daddr 10.0.0.0/8 accept
+        ip daddr 172.16.0.0/12 accept
+        ip daddr 192.168.0.0/16 accept
+
+        # Link-local + mDNS (libp2p LAN discovery).
+        ip daddr 169.254.0.0/16 accept
+        ip daddr 224.0.0.251 accept
+        ip6 daddr fe80::/10 accept
+        ip6 daddr ff02::fb accept
+
+        # ULA private IPv6.
+        ip6 daddr fc00::/7 accept
+
+        # Everything else (the public internet) is denied by the drop policy above. Log first so an
+        # operator sees any attempted egress during air-gap validation.
+        log prefix "ce-fleet egress-deny: " level warn
+    }
+
+    chain input {
+        type filter hook input priority filter; policy accept;
+        # libp2p LAN port — TCP + UDP (QUIC). Restrict to private sources.
+        ip saddr 10.0.0.0/8 tcp dport 4001 accept
+        ip saddr 10.0.0.0/8 udp dport 4001 accept
+        ip saddr 172.16.0.0/12 tcp dport 4001 accept
+        ip saddr 172.16.0.0/12 udp dport 4001 accept
+        ip saddr 192.168.0.0/16 tcp dport 4001 accept
+        ip saddr 192.168.0.0/16 udp dport 4001 accept
+        # Node API (8844) and the llama.cpp engine stay loopback-only: NOT opened here.
+    }
+}

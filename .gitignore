@@ -1,0 +1,8 @@
+/target
+**/node_modules
+/console/dist
+/packaging/linux/stage
+*.msi
+*.deb
+*.rpm
+.DS_Store

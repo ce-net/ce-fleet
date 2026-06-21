@@ -1,0 +1,19 @@
+---
+# ce_fleet role defaults. Override per-site in group_vars; pull SECRETS from Vault (no_log).
+
+# The internal apt/yum mirror (air-gapped); the ce-fleet package is fetched from here, never the net.
+ce_fleet_package_version: "0.1.0"
+ce_fleet_package_url: "http://mirror.hospital.lan/ce-fleet/ce-fleet_{{ ce_fleet_package_version }}_amd64.deb"
+ce_fleet_rpm_url: "http://mirror.hospital.lan/ce-fleet/ce-fleet-{{ ce_fleet_package_version }}.x86_64.rpm"
+
+# The org PUBLIC root key (hex). This is the AUTHORIZATION pin. PUBLIC key only — never the secret.
+ce_fleet_root_pubkey: ""   # set in group_vars (not secret, but site-specific)
+
+# Enrollment: the LAN regional delegate and the shared bootstrap secret.
+ce_fleet_delegate_url: "http://delegate.{{ inventory_hostname_short | default('site') }}.hospital.lan:8855"
+# ce_fleet_bootstrap_secret comes from Vault (see tasks/main.yml; no_log).
+
+# Data dir + service toggles.
+ce_fleet_data_dir: "/var/lib/ce"
+ce_fleet_enable_worker: true
+ce_fleet_apply_egress_firewall: true

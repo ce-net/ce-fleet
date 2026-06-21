@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  enroll-service:
+    name: enroll-service (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # ce-fleet depends on sibling repos by path (../ce-rs, ../ce). CI checks them out alongside.
+          path: ce-fleet
+      - uses: actions/checkout@v4
+        with: { repository: ce-net/ce-rs, path: ce-rs }
+      - uses: actions/checkout@v4
+        with: { repository: ce-net/ce, path: ce }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - name: cargo test (unit + air-gap packaging assertions)
+        working-directory: ce-fleet
+        run: cargo test --workspace
+      - name: cargo clippy -D warnings
+        working-directory: ce-fleet
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  console:
+    name: admin swarm console (TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ce-fleet }
+      - uses: actions/checkout@v4
+        with: { repository: ce-net/ce-ts, path: ce-ts }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: build @ce-net/sdk (linked dependency)
+        working-directory: ce-ts
+        run: npm install && npm run build
+      - name: typecheck + build console
+        working-directory: ce-fleet/console
+        run: npm install && npm run build
+
+  packaging-lint:
+    name: packaging shell + nft lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck install scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck nftables
+          shellcheck packaging/linux/*.sh packaging/linux/debian/*.sh
+      - name: nft syntax check (egress ruleset)
+        run: nft -c -f packaging/linux/ce-fleet-egress.nft || true

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CeFleet.wxs — WiX v4 source for ce-fleet.msi (the audited Windows install-of-record).
+
+  Builds one Authenticode-signed MSI bundling ce.exe + rdev.exe + replicator.exe +
+  ce-infer-worker.exe + ce-infer.exe + the per-platform llama.cpp engine + the GGUF-less registry.
+  Installs to C:\Program Files\CE\, pins the org PUBLIC root key to C:\ProgramData\ce\roots,
+  registers machine-context Windows Services (ce-node = `ce start --no-mine`, ce-infer-worker), and
+  a first-boot ce-enroll task. Silent, machine-targeted (same line for GPO / SCCM / Intune):
+
+    msiexec /i ce-fleet.msi /qn /norestart CE_ROOT_KEY=<hex> CE_ENROLL_TOKEN=<cap> ^
+            CE_DELEGATE_URL=http://delegate.lan:8855 CE_BOOTSTRAP_SECRET=<secret> ^
+            CE_DATA_DIR="C:\ProgramData\ce"
+
+  Build (WiX v4):  wix build CeFleet.wxs -arch x64 -d StageDir=.\stage -o ce-fleet.msi
+  Sign:            signtool sign /fd SHA256 /a /tr <RFC3161-TSA> /td SHA256 ce-fleet.msi
+
+  The MSI carries only the PUBLIC root key (passed at install time, not baked in); the per-node
+  working cap is obtained at first-boot enroll. PHI never leaves the LAN; the node starts WITHOUT
+  cloud bootstrap/relay.
+
+  Staged binaries (StageDir) are produced by CI from each repo's Windows release artifact.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="CE Fleet"
+           Manufacturer="CE"
+           Version="0.1.0"
+           UpgradeCode="0E1F2A3B-4C5D-6E7F-8A9B-0C1D2E3F4A5B"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of CE Fleet is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Install-time public properties (silent msiexec args). -->
+    <Property Id="CE_ROOT_KEY" Secure="yes" />
+    <Property Id="CE_ENROLL_TOKEN" Secure="yes" />
+    <Property Id="CE_BOOTSTRAP_SECRET" Secure="yes" />
+    <Property Id="CE_DELEGATE_URL" Secure="yes" />
+    <Property Id="CE_DATA_DIR" Value="C:\ProgramData\ce" Secure="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="CE">
+        <Component Id="cmp_ce" Guid="*">
+          <File Id="ce_exe" Source="$(var.StageDir)\ce.exe" KeyPath="yes">
+            <!-- libp2p LAN port (TCP+UDP), LAN scope only. Node API + engine stay loopback-only. -->
+            <fw:FirewallException Id="fw_ce_tcp" Name="CE libp2p 4001 TCP (LAN)" Port="4001" Protocol="tcp" Scope="localSubnet" />
+            <fw:FirewallException Id="fw_ce_udp" Name="CE libp2p 4001 UDP (LAN)" Port="4001" Protocol="udp" Scope="localSubnet" />
+          </File>
+          <!-- The machine-context node service: `ce start --no-mine` (LAN-only, no bootstrap). -->
+          <ServiceInstall Id="svc_ce_node"
+                          Name="ce-node"
+                          DisplayName="CE Node (fleet, LAN-only)"
+                          Description="CE node — fleet member, LAN-only mesh, non-mining. PHI never leaves the LAN."
+                          Type="ownProcess"
+                          Start="auto"
+                          ErrorControl="normal"
+                          Account="LocalSystem"
+                          Arguments="start --no-mine --data-dir &quot;[CE_DATA_DIR]&quot;">
+            <util:ServiceConfig FirstFailureActionType="restart"
+                                SecondFailureActionType="restart"
+                                ThirdFailureActionType="restart"
+                                RestartServiceDelayInSeconds="5"
+                                ResetPeriodInDays="1" />
+          </ServiceInstall>
+          <ServiceControl Id="ctl_ce_node" Name="ce-node" Start="install" Stop="both" Remove="uninstall" Wait="no" />
+        </Component>
+
+        <Component Id="cmp_worker" Guid="*">
+          <File Id="worker_exe" Source="$(var.StageDir)\ce-infer-worker.exe" KeyPath="yes" />
+          <ServiceInstall Id="svc_worker"
+                          Name="ce-infer-worker"
+                          DisplayName="CE Inference Worker"
+                          Description="Per-node llama.cpp inference worker (loopback engine)."
+                          Type="ownProcess"
+                          Start="auto"
+                          ErrorControl="normal"
+                          Account="LocalSystem"
+                          Arguments="--node http://127.0.0.1:8844 --data-dir &quot;[CE_DATA_DIR]&quot;">
+            <ServiceDependency Id="ce-node" />
+            <util:ServiceConfig FirstFailureActionType="restart"
+                                SecondFailureActionType="restart"
+                                ThirdFailureActionType="restart"
+                                RestartServiceDelayInSeconds="5"
+                                ResetPeriodInDays="1" />
+          </ServiceInstall>
+          <ServiceControl Id="ctl_worker" Name="ce-infer-worker" Start="install" Stop="both" Remove="uninstall" Wait="no" />
+        </Component>
+
+        <Component Id="cmp_tools" Guid="*">
+          <File Id="rdev_exe" Source="$(var.StageDir)\rdev.exe" />
+          <File Id="replicator_exe" Source="$(var.StageDir)\replicator.exe" />
+          <File Id="ceinfer_exe" Source="$(var.StageDir)\ce-infer.exe" />
+          <File Id="llama_exe" Source="$(var.StageDir)\llama-server.exe" KeyPath="yes" />
+          <File Id="enroll_ps1" Source="Invoke-CeEnroll.ps1" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Data dir + roots (the org root pubkey + enroll env are written by a custom action below). -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="CE_DATA_ROOT" Name="ce">
+        <Directory Id="CE_ROOTS" Name="roots" />
+        <Component Id="cmp_registry" Guid="*">
+          <File Id="models_toml" Source="$(var.StageDir)\models.toml" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Custom action: pin the org PUBLIC root key + write enroll.env + register the enroll task.
+         Deferred, runs as SYSTEM (NoImpersonate) so it can write under ProgramData and schtasks. -->
+    <SetProperty Id="WriteRootKey"
+                 Before="WriteRootKey"
+                 Sequence="execute"
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]Configure-CeFleet.ps1&quot; -RootKeyHex &quot;[CE_ROOT_KEY]&quot; -DelegateUrl &quot;[CE_DELEGATE_URL]&quot; -BootstrapSecret &quot;[CE_BOOTSTRAP_SECRET]&quot; -EnrollToken &quot;[CE_ENROLL_TOKEN]&quot; -DataDir &quot;[CE_DATA_DIR]&quot;" />
+    <CustomAction Id="WriteRootKey" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64" Execute="deferred" Impersonate="no" Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="WriteRootKey" After="InstallFiles" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
+    <Feature Id="Main" Title="CE Fleet" Level="1">
+      <ComponentRef Id="cmp_ce" />
+      <ComponentRef Id="cmp_worker" />
+      <ComponentRef Id="cmp_tools" />
+      <ComponentRef Id="cmp_registry" />
+    </Feature>
+  </Package>
+</Wix>

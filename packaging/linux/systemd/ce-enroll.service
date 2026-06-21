@@ -1,0 +1,41 @@
+# ce-enroll.service — first-boot, one-shot fleet enrollment (Tailscale-authkey model on ce-cap).
+#
+# Runs ONCE per machine: after the node is up (so it has a node id and joined the LAN mesh), before
+# the inference worker (which needs the working cap). ConditionPathExists ensures it never re-runs
+# once /var/lib/ce/enrolled exists. The actual flow is in /usr/local/bin/ce-enroll (ships in the
+# package): it POSTs {node_id, hostname, os, tier} to the delegate /enroll, stores the returned
+# working cap in the node wallet, and writes /var/lib/ce/enrolled.
+#
+# Inputs come from the environment file the installer drops (machine-targeted by Intune/SCCM/GPO or
+# Ansible Vault): the delegate URL, the bootstrap secret, and a per-boot one-time nonce.
+[Unit]
+Description=CE fleet enrollment (one-shot, first boot)
+Documentation=https://github.com/ce-net/ce-fleet
+After=ce-node.service
+Wants=ce-node.service
+Before=ce-infer-worker.service
+ConditionPathExists=!/var/lib/ce/enrolled
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+User=ce
+Group=ce
+# Drop-in env: CE_FLEET_DELEGATE_URL, CE_FLEET_BOOTSTRAP_SECRET, CE_ENROLL_TOKEN (optional), CE_DATA_DIR.
+EnvironmentFile=-/etc/ce/enroll.env
+Environment=CE_DATA_DIR=/var/lib/ce
+ExecStart=/usr/local/bin/ce-enroll --data-dir /var/lib/ce
+# Retry a few times if the delegate or node is briefly unreachable during a boot wave.
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=600
+StartLimitBurst=20
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ce
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

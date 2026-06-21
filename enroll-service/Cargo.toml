@@ -1,0 +1,31 @@
+[package]
+name = "ce-fleet-enroll"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "ce-fleet enrollment + rollup delegate service — an app over ce-rs that turns one-time, nonce-tracked org-root capabilities into per-node working caps (Tailscale-authkey model on ce-cap) and aggregates atlas/status/history across a subtree so the admin swarm console scales past one node."
+
+[[bin]]
+name = "ce-fleet-enroll"
+path = "src/main.rs"
+
+[lib]
+name = "ce_fleet_enroll"
+path = "src/lib.rs"
+
+[dependencies]
+ce-rs.workspace = true
+ce-cap.workspace = true
+ce-identity.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+axum.workspace = true
+sha2.workspace = true

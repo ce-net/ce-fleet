@@ -1,0 +1,41 @@
+# ce-node.service — the CE node, hardened, LAN-only, non-mining.
+#
+# Air-gap: `ce start --no-mine` runs with NO ce-net.com/bootstrap, NO public relay, NO internet
+# DCUtR. Mesh is LAN-only (mDNS + static LAN multiaddrs). The unit deliberately passes NO bootstrap
+# flag. PHI in the data plane physically cannot egress (the egress firewall in ce-fleet-egress.nft
+# default-denies non-LAN outbound).
+#
+# Trust: the org PUBLIC root key is dropped to /var/lib/ce/roots by the package. Authorization is
+# the org root's capability chains; compromising file placement grants no fleet authority.
+[Unit]
+Description=CE node (fleet, LAN-only, non-mining)
+Documentation=https://github.com/ce-net/ce-fleet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ce
+Group=ce
+ExecStart=/usr/local/bin/ce start --no-mine --data-dir /var/lib/ce
+Restart=always
+RestartSec=3
+# --- hardening (least privilege; the node only needs its own data dir) ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/var/lib/ce
+# LAN-only: allow local + private + multicast (mDNS) address families; deny the rest at the
+# firewall layer (ce-fleet-egress.nft). AF families the node legitimately needs:
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target

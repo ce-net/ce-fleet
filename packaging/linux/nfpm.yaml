@@ -1,0 +1,81 @@
+# nfpm.yaml — build ce-fleet.deb AND ce-fleet.rpm from one config (nfpm by GoReleaser).
+#
+# Why nfpm over cargo-deb/cargo-generate-rpm: ce-fleet bundles binaries produced by SEVERAL repos
+# (ce, rdev, replicator, ce-infer-worker) plus the per-platform llama.cpp engine — not one cargo
+# crate's artifact. nfpm packages a pre-staged tree, which is exactly this multi-binary case. The
+# deb/rpm are GPG-signed at release (`nfpm package --packager deb` then `dpkg-sig` / `rpm --addsign`).
+#
+# Stage the binaries under ./stage/ before packaging (CI does this from each repo's release tarball);
+# the contents below reference that staging layout. The org PUBLIC root key is placed by postinst
+# from /etc/ce/ce-root.pub the installer drops (machine-targeted by Ansible/MECM), so a single
+# package serves every site — the root pin is config, not baked into the package.
+name: ce-fleet
+arch: amd64
+platform: linux
+version: ${CE_FLEET_VERSION}
+section: net
+priority: optional
+maintainer: Leif Rydenfalk <ledamecrydenfalk@gmail.com>
+description: |
+  CE fleet bundle — node + rdev + replicator + ce-infer worker + llama.cpp engine, hardened
+  systemd services (LAN-only, non-mining), first-boot capability enrollment. On-prem,
+  air-gappable distributed LLM inference for a hospital fleet. PHI never leaves the LAN.
+vendor: CE
+homepage: https://github.com/ce-net/ce-fleet
+license: MIT
+
+depends:
+  - nftables
+
+contents:
+  # --- binaries (staged from each repo's release artifact) ---
+  - src: ./stage/ce
+    dst: /usr/local/bin/ce
+    file_info: { mode: 0755 }
+  - src: ./stage/rdev
+    dst: /usr/local/bin/rdev
+    file_info: { mode: 0755 }
+  - src: ./stage/replicator
+    dst: /usr/local/bin/replicator
+    file_info: { mode: 0755 }
+  - src: ./stage/ce-infer-worker
+    dst: /usr/local/bin/ce-infer-worker
+    file_info: { mode: 0755 }
+  - src: ./stage/ce-infer
+    dst: /usr/local/bin/ce-infer
+    file_info: { mode: 0755 }
+  # The per-platform llama.cpp engine (CUDA build + CPU/Vulkan fallback selected at install time).
+  - src: ./stage/llama-server
+    dst: /usr/local/bin/llama-server
+    file_info: { mode: 0755 }
+  # --- enrollment glue ---
+  - src: ./ce-enroll.sh
+    dst: /usr/local/bin/ce-enroll
+    file_info: { mode: 0755 }
+  # --- systemd units ---
+  - src: ./systemd/ce-node.service
+    dst: /lib/systemd/system/ce-node.service
+  - src: ./systemd/ce-infer-worker.service
+    dst: /lib/systemd/system/ce-infer-worker.service
+  - src: ./systemd/ce-enroll.service
+    dst: /lib/systemd/system/ce-enroll.service
+  # --- firewall (egress-deny; the air-gap's second half) ---
+  - src: ./ce-fleet-egress.nft
+    dst: /etc/ce/ce-fleet-egress.nft
+  # --- GGUF-less model registry (CIDs only; weights arrive over the LAN blob store) ---
+  - src: ./models.toml
+    dst: /etc/ce/models.toml
+    type: config
+  # --- enrollment env template (operator fills delegate URL + bootstrap secret via Vault) ---
+  - src: ./enroll.env.example
+    dst: /etc/ce/enroll.env.example
+    type: config
+
+scripts:
+  postinstall: ./debian/postinst.sh
+  preremove: ./debian/prerm.sh
+
+overrides:
+  rpm:
+    depends:
+      - nftables

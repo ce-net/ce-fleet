@@ -1,0 +1,23 @@
+{
+  "name": "ce-fleet-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ce-fleet admin swarm console — live grid of every fleet node as it enrolls (grey to green), health, role (worker/router/idle/offline), tier, model, and capability status. Tailscale-admin / torrent-swarm feel. Framework-free TypeScript + Vite, importing @ce-net/sdk and the ce-fleet delegate /fleet/rollup endpoints. Read panels are token-free; mutating actions are capability-gated. PHI never leaves the LAN.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Leif Rydenfalk <ledamecrydenfalk@gmail.com>",
+  "repository": { "type": "git", "url": "https://github.com/ce-net/ce-fleet.git" },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ce-net/sdk": "file:../../ce-ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

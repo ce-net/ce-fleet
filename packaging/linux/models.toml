@@ -1,0 +1,49 @@
+# models.toml — the GGUF-less model registry shipped by the package.
+#
+# This carries ONLY logical-model -> object-CID mappings + tier minimums. The weights themselves
+# (the GGUF blobs) are NOT in the package: each worker `ce.get_object(<cid>)` pulls them over the
+# LAN blob store (ce-pin), CID-verified on the way in. Air-gap native — no internet, no 1500 copies.
+#
+# CIDs are filled in by `ce-infer models publish <gguf> --id <id>` at site bring-up (which puts the
+# blob and updates this registry, then ce-pin replicates it across the LAN). The placeholders below
+# are intentionally empty until the site publishes its approved weights.
+
+[registry]
+# Bumped whenever a model id/CID changes; the worker reloads on mismatch.
+version = 1
+
+[[model]]
+id = "clinical-chat-8b"
+quant = "Q4_K_M"
+ctx = 8192
+ram_min_mb = 8000
+vram_min_mb = 0
+role = "chat"
+gguf_object_cid = ""   # TODO: published at site bring-up via `ce-infer models publish`
+
+[[model]]
+id = "clinical-chat-13b"
+quant = "Q4_K_M"
+ctx = 8192
+ram_min_mb = 24000
+vram_min_mb = 10000
+role = "chat"
+gguf_object_cid = ""   # TODO
+
+[[model]]
+id = "code-7b"
+quant = "Q4_K_M"
+ctx = 8192
+ram_min_mb = 8000
+vram_min_mb = 0
+role = "code"
+gguf_object_cid = ""   # TODO
+
+[[model]]
+id = "clinical-34b"
+quant = "Q4_K_M"
+ctx = 8192
+ram_min_mb = 0
+vram_min_mb = 22000
+role = "chat"
+gguf_object_cid = ""   # TODO — GpuHeavy only / v2 sharding

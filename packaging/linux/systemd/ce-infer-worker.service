@@ -1,0 +1,37 @@
+# ce-infer-worker.service — the per-node inference worker (shells out to llama.cpp llama-server).
+#
+# Runs only after the node is up and the machine has enrolled (it needs a working cap to authorize
+# inference). The engine binary + GGUF arrive via the package or the LAN blob store (ce-pin); the
+# llama-server it spawns binds 127.0.0.1 ONLY (loopback) — never the LAN, never 0.0.0.0.
+[Unit]
+Description=CE inference worker (llama.cpp, loopback engine)
+Documentation=https://github.com/ce-net/ce-infer
+After=ce-node.service ce-enroll.service
+Wants=ce-node.service
+Requires=ce-enroll.service
+
+[Service]
+Type=simple
+User=ce
+Group=ce
+Environment=CE_DATA_DIR=/var/lib/ce
+Environment=CE_INFER_ROOTS=/var/lib/ce/roots
+# The worker talks ONLY to the local node API and a loopback-bound engine.
+Environment=CE_NODE=http://127.0.0.1:8844
+ExecStart=/usr/local/bin/ce-infer-worker --node http://127.0.0.1:8844 --data-dir /var/lib/ce
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictRealtime=true
+LockPersonality=true
+# The worker writes pulled GGUFs under the data dir and needs to exec the bundled engine.
+ReadWritePaths=/var/lib/ce
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

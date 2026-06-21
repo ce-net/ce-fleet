@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.ce-net.ce-infer-worker.plist — the macOS inference worker daemon (llama.cpp uses Metal on
+  Apple Silicon, same GGUF). Deployed via Jamf/MDM after the node + enrollment. The llama-server it
+  spawns binds 127.0.0.1 only.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ce-net.ce-infer-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/ce-infer-worker</string>
+    <string>--node</string>
+    <string>http://127.0.0.1:8844</string>
+    <string>--data-dir</string>
+    <string>/Library/Application Support/ce</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CE_INFER_ROOTS</key>
+    <string>/Library/Application Support/ce/roots</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>/var/log/ce-infer-worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/ce-infer-worker.err.log</string>
+  <key>ProcessType</key>
+  <string>Adaptive</string>
+</dict>
+</plist>

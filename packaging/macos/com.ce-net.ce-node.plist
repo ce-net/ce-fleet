@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.ce-net.ce-node.plist — the macOS (clinical Mac) launchd daemon, deployed via Jamf/MDM.
+  Runs `ce start --no-mine` (LAN-only, no cloud bootstrap), restarts on crash, as a system daemon.
+  The brew tap installs the binaries; Jamf drops this plist into /Library/LaunchDaemons and the org
+  PUBLIC root key into the data dir's roots. PHI never leaves the LAN.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ce-net.ce-node</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/ce</string>
+    <string>start</string>
+    <string>--no-mine</string>
+    <string>--data-dir</string>
+    <string>/Library/Application Support/ce</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>/var/log/ce-node.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/ce-node.err.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
