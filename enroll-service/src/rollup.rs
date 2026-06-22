@@ -202,4 +202,144 @@ mod tests {
         assert_eq!(a.tier.as_deref(), Some("GpuMid"));
         assert_eq!(a.model.as_deref(), Some("clinical-chat-8b"));
     }
+
+    // ---- extended rollup coverage ----
+
+    /// A source that yields a fixed atlas and an injectable history behavior.
+    struct ConfigurableSource {
+        atlas: Vec<AtlasEntry>,
+        history: HistoryMode,
+    }
+
+    #[derive(Clone)]
+    enum HistoryMode {
+        None,
+        Some(u64),
+        Err,
+    }
+
+    fn history_with(jobs_hosted: u64, heartbeats: u64) -> NodeHistory {
+        let json = serde_json::json!({
+            "node_id": "x",
+            "jobs_hosted": jobs_hosted,
+            "jobs_paid": jobs_hosted,
+            "heartbeats_hosted": heartbeats,
+            "heartbeats_paid": heartbeats,
+            "expiries": 0,
+            "earned": "0",
+            "spent": "0",
+            "first_height": 1,
+            "last_height": 2,
+        });
+        serde_json::from_value(json).expect("node history")
+    }
+
+    impl MeshSource for ConfigurableSource {
+        async fn atlas(&self) -> Result<Vec<AtlasEntry>> {
+            Ok(self.atlas.clone())
+        }
+        async fn history(&self, _node_id: &str) -> Result<Option<NodeHistory>> {
+            match &self.history {
+                HistoryMode::None => Ok(None),
+                HistoryMode::Some(n) => Ok(Some(history_with(*n, 0))),
+                HistoryMode::Err => Err(anyhow::anyhow!("history backend down")),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_atlas_yields_zeroed_rollup() {
+        let src = ConfigurableSource { atlas: vec![], history: HistoryMode::None };
+        let r = RollupAggregator::new(src, 180).rollup().await.unwrap();
+        assert_eq!(r.total, 0);
+        assert_eq!(r.workers + r.idle + r.routers + r.offline, 0);
+        assert!(r.nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn history_error_is_tolerated_node_still_renders() {
+        let src = ConfigurableSource {
+            atlas: vec![entry("a", &["infer"], 1, 10)],
+            history: HistoryMode::Err,
+        };
+        let r = RollupAggregator::new(src, 180).rollup().await.unwrap();
+        assert_eq!(r.total, 1);
+        assert_eq!(r.nodes[0].delivered_work, None, "errored history → None, not a failure");
+        assert_eq!(r.nodes[0].role, Role::Worker);
+    }
+
+    #[tokio::test]
+    async fn delivered_work_is_propagated_when_present() {
+        let src = ConfigurableSource {
+            atlas: vec![entry("a", &["infer"], 0, 10)],
+            history: HistoryMode::Some(42),
+        };
+        let r = RollupAggregator::new(src, 180).rollup().await.unwrap();
+        assert_eq!(r.nodes[0].delivered_work, Some(42));
+    }
+
+    #[tokio::test]
+    async fn last_seen_exactly_at_window_is_not_offline() {
+        // role uses strict `>`; a node at the boundary is still considered fresh.
+        let src = ConfigurableSource {
+            atlas: vec![entry("a", &["infer"], 0, 180)],
+            history: HistoryMode::None,
+        };
+        let r = RollupAggregator::new(src, 180).rollup().await.unwrap();
+        assert_eq!(r.nodes[0].role, Role::Idle, "boundary last_seen is fresh");
+        assert_eq!(r.offline, 0);
+        // one second past the window flips to offline
+        let src2 = ConfigurableSource {
+            atlas: vec![entry("a", &["infer"], 0, 181)],
+            history: HistoryMode::None,
+        };
+        let r2 = RollupAggregator::new(src2, 180).rollup().await.unwrap();
+        assert_eq!(r2.nodes[0].role, Role::Offline);
+    }
+
+    #[tokio::test]
+    async fn running_jobs_only_counts_live_workers() {
+        // An offline node with running_jobs must NOT contribute to the running_jobs total.
+        let src = ConfigurableSource {
+            atlas: vec![
+                entry("live", &["infer"], 4, 10),
+                entry("stale", &["infer"], 7, 9_999), // stale → offline, jobs ignored
+            ],
+            history: HistoryMode::None,
+        };
+        let r = RollupAggregator::new(src, 180).rollup().await.unwrap();
+        assert_eq!(r.running_jobs, 4);
+        assert_eq!(r.workers, 1);
+        assert_eq!(r.offline, 1);
+    }
+
+    #[tokio::test]
+    async fn untagged_node_is_a_router_even_when_busy() {
+        // No `infer` tag → Router regardless of running_jobs.
+        let src = ConfigurableSource {
+            atlas: vec![entry("r", &["relay"], 9, 10)],
+            history: HistoryMode::None,
+        };
+        let r = RollupAggregator::new(src, 180).rollup().await.unwrap();
+        assert_eq!(r.nodes[0].role, Role::Router);
+        assert_eq!(r.running_jobs, 0, "router jobs do not count toward worker load");
+    }
+
+    #[test]
+    fn role_serializes_snake_case() {
+        assert_eq!(serde_json::to_value(Role::Worker).unwrap(), "worker");
+        assert_eq!(serde_json::to_value(Role::Offline).unwrap(), "offline");
+        let back: Role = serde_json::from_value(serde_json::json!("idle")).unwrap();
+        assert_eq!(back, Role::Idle);
+    }
+
+    #[test]
+    fn node_view_lacking_tier_or_model_tags_is_none() {
+        let src_entry = entry("p", &["infer"], 1, 1);
+        let agg = RollupAggregator::new(ConfigurableSource { atlas: vec![], history: HistoryMode::None }, 180);
+        let view = agg.classify(&src_entry, None);
+        assert!(view.tier.is_none());
+        assert!(view.model.is_none());
+        assert_eq!(view.role, Role::Worker);
+    }
 }

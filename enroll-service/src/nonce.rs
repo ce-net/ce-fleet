@@ -126,4 +126,54 @@ mod tests {
         assert!(led.claim("h", 2_000, 0).is_ok());
         assert_eq!(led.len(), 1, "the aged-out 'g' record was collected");
     }
+
+    // ---- extended nonce coverage ----
+
+    #[test]
+    fn valid_until_zero_never_expires() {
+        let led = NonceLedger::new(3600);
+        // valid_until == 0 disables the nonce-expiry check entirely; a far-future `now` still
+        // claims fine (no Expired error).
+        assert!(led.claim("eternal", 9_000_000_000, 0).is_ok());
+        // and an immediate replay within the retention window is still rejected.
+        assert_eq!(led.claim("eternal", 9_000_000_001, 0), Err(ClaimError::AlreadyUsed));
+    }
+
+    #[test]
+    fn claim_exactly_at_valid_until_is_allowed() {
+        // The check is `now > valid_until`, so now == valid_until is still in-window.
+        let led = NonceLedger::new(3600);
+        assert!(led.claim("edge", 2_000, 2_000).is_ok());
+    }
+
+    #[test]
+    fn retain_secs_overflow_does_not_panic() {
+        let led = NonceLedger::new(u64::MAX);
+        assert!(led.claim("n", u64::MAX - 1, 0).is_ok());
+        assert_eq!(led.len(), 1);
+    }
+
+    #[test]
+    fn concurrent_claims_of_one_nonce_burn_exactly_once() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let led = Arc::new(NonceLedger::new(3600));
+        let wins = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..16 {
+            let led = Arc::clone(&led);
+            let wins = Arc::clone(&wins);
+            handles.push(std::thread::spawn(move || {
+                if led.claim("contended", 1_000, 0).is_ok() {
+                    wins.fetch_add(1, Ordering::Relaxed);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(wins.load(Ordering::Relaxed), 1, "exactly one racing claim may win");
+        assert_eq!(led.len(), 1);
+    }
 }

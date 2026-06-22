@@ -113,4 +113,69 @@ mod tests {
         };
         assert_eq!(open.nonce_valid_until(), 0);
     }
+
+    // ---- extended token coverage ----
+
+    #[test]
+    fn secret_eq_is_length_sensitive_and_position_insensitive() {
+        // Differing length is always a mismatch, even when the shorter is a prefix.
+        assert!(!secret_eq("abc", "abcd"));
+        assert!(!secret_eq("abcd", "abc"));
+        // Same length, single differing byte anywhere → mismatch.
+        assert!(!secret_eq("aaaa", "aaab"));
+        assert!(!secret_eq("baaa", "aaaa"));
+        // Empty vs non-empty.
+        assert!(!secret_eq("", "x"));
+        assert!(!secret_eq("x", ""));
+        // NUL bytes are compared, not treated as terminators.
+        assert!(secret_eq("a\0b", "a\0b"));
+        assert!(!secret_eq("a\0b", "a\0c"));
+    }
+
+    #[test]
+    fn nonce_valid_until_saturates_on_overflow() {
+        let p = BootstrapPolicy {
+            bootstrap_secret: "s".into(),
+            tag: None,
+            abilities: vec![],
+            working_ttl_secs: 0,
+            bootstrap_ttl_secs: u64::MAX,
+            enroll_window_start: u64::MAX,
+        };
+        assert_eq!(p.nonce_valid_until(), u64::MAX, "must saturate, not wrap/panic");
+    }
+
+    #[test]
+    fn enroll_request_roundtrips_through_json() {
+        let req = EnrollRequest {
+            node_id: "a".repeat(64),
+            hostname: "box-01".into(),
+            os: "linux".into(),
+            tier: "GpuMid".into(),
+            nonce: "n-123".into(),
+            bootstrap_secret: "top-secret".into(),
+        };
+        let s = serde_json::to_string(&req).unwrap();
+        let back: EnrollRequest = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.node_id, req.node_id);
+        assert_eq!(back.tier, req.tier);
+        assert_eq!(back.nonce, req.nonce);
+        assert_eq!(back.bootstrap_secret, req.bootstrap_secret);
+    }
+
+    #[test]
+    fn enroll_outcome_roundtrips_through_json() {
+        let out = EnrollOutcome {
+            working_cap: "deadbeef".into(),
+            abilities: vec!["infer".into(), "sync".into()],
+            tag: Some("radiology".into()),
+            not_after: 1_700_000_000,
+        };
+        let s = serde_json::to_string(&out).unwrap();
+        let back: EnrollOutcome = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.working_cap, out.working_cap);
+        assert_eq!(back.abilities, out.abilities);
+        assert_eq!(back.tag, out.tag);
+        assert_eq!(back.not_after, out.not_after);
+    }
 }
