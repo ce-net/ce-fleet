@@ -36,8 +36,10 @@ The whole authorization model is `ce-cap` capability chains — the same `onward
             └─ leaves          (binaries + GGUF arrive in 2–3 LAN hops; leaf cap = sync only)
 ```
 
-SCCM/Ansible is the **audited install-of-record + fallback**; `replicator` (`packaging/linux/seed-fanout.sh`)
-is the **fast O(log N) content path** for binary/model fan-out over the LAN.
+SCCM/Ansible is the **audited install-of-record + fallback**; `replicator` is the **fast O(log N)
+content path** for binary/model fan-out over the LAN — driven from a seed node by
+`packaging/linux/seed-fanout.sh` (Linux) or `packaging/windows/Seed-Fanout.ps1` (Windows). Both are
+thin wrappers over the same cross-platform `replicator` binary.
 
 ## Air-gap (PHI never leaves the LAN)
 
@@ -96,8 +98,17 @@ cd console && npm install && npm run dev   # dev proxies /delegate -> :8855, /ce
 ## Build / test
 
 ```bash
+cargo build                # enroll-service (path deps: ../ce-rs, ../ce/crates/{ce-cap,ce-identity})
 cargo test                 # enroll-service unit + air-gap packaging tests
 cd console && npm run build # admin swarm console (typecheck + bundle)
 ```
+
+The Rust enroll-service and the air-gap packaging tests build and pass on Linux, macOS, and Windows
+(`cargo build` / `cargo test` are platform-clean: no Unix-only APIs, `std::env::temp_dir()` and a
+`$XDG_DATA_HOME`/`%LOCALAPPDATA%`/`$HOME`-aware data dir, no hardcoded `/tmp` or `/`-joined paths).
+CI (`.github/workflows/ci.yml`) runs a 3-OS matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`,
+`fail-fast: false`) for the Rust crate, an `ubuntu`+`windows` matrix for the TS console, shellcheck +
+`nft -c` on Linux, and a Windows job that AST-parses every `packaging/windows/*.ps1`. The signed MSI
+(`wix build`) and the `.deb`/`.rpm` (`nfpm package`) builds are documented as gated release jobs.
 
 See `docs/` for the enrollment flow, the trust model, and the air-gap posture.

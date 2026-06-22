@@ -142,7 +142,9 @@ fn dirs_data_dir() -> PathBuf {
         return PathBuf::from(x);
     }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".local/share");
+        // Build the path component-by-component (never a literal embedded separator) so it renders
+        // with the platform separator; on unix this is byte-identical to `<home>/.local/share`.
+        return PathBuf::from(home).join(".local").join("share");
     }
     PathBuf::from(".")
 }
