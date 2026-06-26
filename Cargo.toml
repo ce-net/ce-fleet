@@ -4,7 +4,7 @@ members = ["enroll-service"]
 
 [workspace.package]
 edition = "2024"
-license = "MIT"
+license = "AGPL-3.0-only"
 authors = ["Leif Rydenfalk <ledamecrydenfalk@gmail.com>"]
 repository = "https://github.com/ce-net/ce-fleet"
 
