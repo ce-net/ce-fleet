@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["enroll-service"]
+members = ["enroll-service", "fleet-cli"]
 
 [workspace.package]
 edition = "2024"
@@ -23,3 +23,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 axum = "0.7"
 sha2 = "0.10"
+directories = "5"
+toml = "0.8"
+reqwest = { version = "0.12", features = ["json"] }

@@ -1,0 +1,33 @@
+[package]
+name = "ce-fleet-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ce-fleet"
+path = "src/main.rs"
+
+[lib]
+name = "ce_fleet_cli"
+path = "src/lib.rs"
+
+[dependencies]
+ce-rs = { workspace = true, features = ["serve"] }
+ce-cap = { workspace = true }
+ce-identity = { workspace = true }
+anyhow = { workspace = true }
+# `net` for axum's TcpListener; the rest match the workspace set.
+tokio = { workspace = true, features = ["net"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+axum = { workspace = true }
+directories = { workspace = true }
+reqwest = { workspace = true }

@@ -1,0 +1,37 @@
+# ce-fleet — own your ce-net device mesh: discover nearby nodes, pair devices by mutual consent
+# (an Accept/Deny prompt on the target — no codes, no token copy-paste), and grant access.
+# Install on every device with:  ce app install ce-fleet --on fleet=mine
+# Each device then runs the pairing daemon + a loopback admin UI (default http://127.0.0.1:8975).
+
+[app]
+name      = "ce-fleet"
+version   = "0.1.0"
+summary   = "Discover + pair your ce-net devices with consent prompts; a Rust mesh admin toolkit"
+runtime   = "native"
+publisher = "c0be11e0ce0aaa769da6f9970244947d3d32a0c0d8302fb5f41f73d7950be456"
+
+[native]
+bin = "ce-fleet"
+[native.artifacts]
+# sha256 of each release binary, uploaded to ce-hub /blobs at publish time.
+"darwin-amd64" = "PLACEHOLDER_darwin_amd64"
+"darwin-arm64" = "PLACEHOLDER_darwin_arm64"
+"linux-amd64"  = "PLACEHOLDER_linux_amd64"
+
+[deps]
+# This is the ISSUER side: it mints capabilities with the local node's own identity key, so it needs
+# no granted abilities of its own. The caps it hands out are what make a paired device able to act.
+
+[sandbox]
+# Reads the node identity key and writes the wallet/roots under the data dir (host access), and binds
+# a loopback-only admin UI. It reaches the mesh through the local node over 127.0.0.1.
+tier       = "none"        # explicit + audited; the host-access (key + wallet) case
+net        = "loopback"    # mesh transport via the local node (127.0.0.1:8844); UI on 127.0.0.1:8975
+capability = "inherit"
+
+[daemon]
+# The pairing daemon: serves the `ce-fleet/pair` mesh topic (incoming requests -> Accept/Deny prompt)
+# and hosts the admin UI. One ce-appmgr-supervised process per device; no separate launchd/systemd unit.
+enabled = true
+args    = ["daemon"]
+restart = "on-failure"
