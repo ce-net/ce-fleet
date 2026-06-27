@@ -10,7 +10,7 @@ repository = "https://github.com/ce-net/ce-fleet"
 
 [workspace.dependencies]
 ce-rs = { path = "../ce-rs" }
-ce-cap = { path = "../ce/crates/ce-cap" }
+ce-iam-core = { path = "../ce-iam/crates/ce-iam-core" }
 ce-identity = { path = "../ce/crates/ce-identity" }
 anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
